@@ -172,20 +172,20 @@ func NewUpdater(
 		podLifetimeUpdateThreshold: podLifetimeUpdateThreshold,
 		evictAfterOOMThreshold:     evictAfterOOMThreshold,
 	}
+	u.podInformer = podInformerFactory.Core().V1().Pods().Informer()
 	if features.Enabled(features.CPUStartupBoost) {
-		u.podInformer = podInformerFactory.Core().V1().Pods().Informer()
 		u.cpuStartupBoostQueue = workqueue.NewTypedRateLimitingQueueWithConfig(
 			workqueue.NewTypedItemExponentialFailureRateLimiter[string](100*time.Millisecond, 1000*time.Second),
 			workqueue.TypedRateLimitingQueueConfig[string]{
 				Name: "cpu-startup-boost",
 			},
 		)
-		if _, err := u.podInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-			AddFunc:    u.PodAddHandler,
-			UpdateFunc: u.PodUpdateHandler,
-		}); err != nil {
-			return nil, fmt.Errorf("adding Pod event handler: %w", err)
-		}
+	}
+	if _, err := u.podInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    u.PodAddHandler,
+		UpdateFunc: u.PodUpdateHandler,
+	}); err != nil {
+		return nil, fmt.Errorf("adding Pod event handler: %w", err)
 	}
 
 	return u, nil
@@ -486,19 +486,30 @@ func (u *updater) PodAddHandler(obj any) {
 		klog.InfoS("Expected Pod", "got", obj)
 		return
 	}
-	if vpa_api_util.IsPodReady(pod) && vpa_api_util.PodHasCPUBoostInProgressAnnotation(pod) && !slices.Contains(u.ignoredNamespaces, pod.Namespace) {
+	priority.UpdateCachedPodOOMs(nil, pod, time.Now())
+	if u.cpuStartupBoostQueue != nil && vpa_api_util.IsPodReady(pod) && vpa_api_util.PodHasCPUBoostInProgressAnnotation(pod) && !slices.Contains(u.ignoredNamespaces, pod.Namespace) {
 		u.enqueuePod(pod)
 	}
 }
 
-func (u *updater) PodUpdateHandler(_, curObj any) {
+func (u *updater) PodUpdateHandler(oldObj, curObj any) {
+	var oldPod *corev1.Pod
+	if oldObj != nil {
+		var ok bool
+		oldPod, ok = oldObj.(*corev1.Pod)
+		if !ok {
+			klog.InfoS("Expected Pod", "got", oldObj)
+			return
+		}
+	}
 	curPod, ok := curObj.(*corev1.Pod)
 	if !ok {
 		klog.InfoS("Expected Pod", "got", curObj)
 		return
 	}
 
-	if vpa_api_util.IsPodReady(curPod) && vpa_api_util.PodHasCPUBoostInProgressAnnotation(curPod) && !slices.Contains(u.ignoredNamespaces, curPod.Namespace) {
+	priority.UpdateCachedPodOOMs(oldPod, curPod, time.Now())
+	if u.cpuStartupBoostQueue != nil && vpa_api_util.IsPodReady(curPod) && vpa_api_util.PodHasCPUBoostInProgressAnnotation(curPod) && !slices.Contains(u.ignoredNamespaces, curPod.Namespace) {
 		u.enqueuePod(curPod)
 	}
 }

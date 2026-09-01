@@ -166,7 +166,7 @@ const (
 )
 
 // EvictionChangeRequirement refers to the relationship between the new target recommendation for a Pod and its current requests, what kind of change is necessary for the Pod to be evicted
-// +kubebuilder:validation:Enum:=TargetHigherThanRequests;TargetLowerThanRequests
+// +kubebuilder:validation:Enum:=TargetHigherThanRequests;TargetLowerThanRequests;TargetHigherThanRequestsAndOOM
 type EvictionChangeRequirement string
 
 const (
@@ -174,6 +174,8 @@ const (
 	TargetHigherThanRequests EvictionChangeRequirement = "TargetHigherThanRequests"
 	// TargetLowerThanRequests means the new target recommendation for a Pod is lower than its current requests, i.e. the Pod is scaled down
 	TargetLowerThanRequests EvictionChangeRequirement = "TargetLowerThanRequests"
+	// TargetHigherThanRequestsAndOOM means the new target recommendation for a Pod is higher than its current requests, i.e. the Pod is scaled up, and the same container recently OOMed and has not been resized in place since. Intended for memory.
+	TargetHigherThanRequestsAndOOM EvictionChangeRequirement = "TargetHigherThanRequestsAndOOM"
 )
 
 // EvictionRequirement defines a single condition which needs to be true in
